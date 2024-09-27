@@ -369,8 +369,8 @@ def main():
     db_config = {
         "host": "localhost",
         "user": "root",
-        "password": "Abis225588",
-        "database": "dealdash_auctions_schema"
+        "password": "****",
+        "database": "NAME OF DATABASE"
     }
     urls = ["https://www.dealdash.com/auction/13987523", "https://www.dealdash.com/auction/13987536"]
     threads = []
