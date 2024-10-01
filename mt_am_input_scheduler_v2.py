@@ -25,7 +25,7 @@ class AuctionMonitor:
         self.driver = driver
         self.db_config = db_config
    
-    def start_monitoring(self, interval=0.5):
+    def start_monitoring_bids(self):
         self.driver = setup_driver()
         self.driver.get(self.url)
         
@@ -33,34 +33,74 @@ class AuctionMonitor:
         try:
             while True:
                 current_highest_bid = self.get_current_highest_bid_info(self.driver)
-                print('test')
                 self.keep_alive(self.driver)
-                time.sleep(3)
-                current_bider = self.get_current_bider_info(self.driver)
                 if current_highest_bid != previous_data:
                     previous_data = current_highest_bid
                     if current_highest_bid != ['']:
                         current_highest_bid_amount = current_highest_bid[0]
                         current_highest_bid_username = current_highest_bid[1]
                         current_highest_bid_timestamp = current_highest_bid[2]
-                        current_bidder_time_joined = current_bider[0]
-                        current_bidder_location = current_bider[1]
-                        self.save_to_database(current_highest_bid_amount, current_highest_bid_username, current_highest_bid_timestamp, current_bidder_location, current_bidder_time_joined)
+                        self.save_to_database(current_highest_bid_amount, current_highest_bid_username, current_highest_bid_timestamp)
                         # print( "current_highest_bid_amount: ", current_highest_bid_amount)
                         # print( "current_highest_bid_username: ", current_highest_bid_username)
                         # print( "current_highest_bid_timestamp: ", current_highest_bid_timestamp)
-                        # print( "current_bidder_location: ", current_bidder_location)
-                        # print( "current_bidder_time_joined: ", current_bidder_time_joined)
                         # print( "----------------------------------------")
                 status = self.is_item_sold(self.driver)
                 if status == True:
-                    self.update_database()
-                    print("Item is sold!")
+                    #self.update_database()
+                    print("Item is sold!, stopped monitoring bids.")
                     break
-                time.sleep(interval)
         except KeyboardInterrupt:
             print("Monitoring stopped by user.")
+        # finally:
+        #     self.driver.quit()
+
+    def start_monitoring_bidders_info(self):
+        self.driver = setup_driver()
+        self.driver.get(self.url)
+        
+        previous_data = None
+        try:
+            while True:
+                current_bidders_username, current_bidders_info = self.get_current_bider_info(self.driver)
+                self.keep_alive(self.driver)
+                if current_bidders_info != previous_data:
+                    previous_data = current_bidders_info
+                    if current_bidders_info and current_bidders_info != [None, None]:
+                        current_bidders_time_joined = current_bidders_info[0]
+                        current_bidders_location = current_bidders_info[1]
+                        self.save_to_database(current_highest_bid_username=current_bidders_username, current_bidder_location=current_bidders_location, current_bidder_time_joined=current_bidders_time_joined)
+                        print( "current_bidders_username: ", current_bidders_username)
+                        print( "current_bidders_location: ", current_bidders_location)
+                        print( "current_bidders_time_joined: ", current_bidders_time_joined)
+                        # print( "----------------------------------------")
+                status = self.is_item_sold(self.driver)
+                if status == True:
+                    #self.update_database()
+                    print("Item is sold!, stopped monitoring bidders info.")
+                    break
+        except KeyboardInterrupt:
+            print("Monitoring stopped by user.")
+        # finally:
+        #     self.driver.quit()
+
+    def start_monitorinig_auction(self):
+        bid_thread = threading.Thread(target=self.start_monitoring_bids)
+        bidder_thread = threading.Thread(target=self.start_monitoring_bidders_info)
+        bid_thread.start()
+        bidder_thread.start()
+        try:
+            while True:
+                if not bid_thread.is_alive() and not bidder_thread.is_alive():
+                    break
+                time.sleep(1)
+        except KeyboardInterrupt:
+            print("\nMonitoring stopped by user.")
         finally:
+            # You might want to implement a way to stop the threads gracefully here
+            print(f"Monitoring of auction {self.auction_web_identifier} complete.")
+            self.update_database()
+            print("Auction status updated in database")
             self.driver.quit()
 
     def keep_alive(self, driver):
@@ -83,23 +123,23 @@ class AuctionMonitor:
             print(f"Error getting auction data: {e}")
             return None
 
-    def get_current_bider_info(self, driver, max_wait_time=7):  
+    def get_current_bider_info(self, driver):  
         start_time = time.time()
         while True:
             try:
+                bidder_username = WebDriverWait(driver, 1).until(
+                    EC.presence_of_element_located((By.XPATH, "//div[@class='css-146c3p1 r-gfo7p r-cv4lhi r-vw2c0b r-jwli3a']"))
+                )
                 bidder_info_element = WebDriverWait(driver, 1).until(
                     EC.presence_of_element_located((By.XPATH, "//div[@class='css-175oi2r r-18u37iz r-1awozwy']"))
                 )
-                bidder_info = bidder_info_element.text.split("\n")
-                if len(bidder_info) > 1:
-                    return bidder_info
-                else:
-                    #print('retrying...')
-                    pass
+                if bidder_info_element and len(bidder_username.text) != 0:
+                    bidder_username = bidder_username.text
+                    bidder_info_element = bidder_info_element.text
+                    bidder_info = bidder_info_element.split("\n")
+                    if len(bidder_info) > 1:
+                        return bidder_username, bidder_info
             except (TimeoutException, StaleElementReferenceException):
-                if time.time() - start_time > max_wait_time:
-                    print(f"Element not found after waiting for {max_wait_time} seconds")
-                    return [None, None]
                 print("Element not found, retrying...")
             except Exception as e:
                 print(f"An unexpected error occurred: {e}")
@@ -129,32 +169,35 @@ class AuctionMonitor:
         #print("Auction status updated in database")
         connection.close()
 
-    def save_to_database(self, current_highest_bid_amount, 
-                         current_highest_bid_username, 
-                         current_highest_bid_timestamp, 
-                         current_bidder_location, 
-                         current_bidder_time_joined):
+    def save_to_database(self, current_highest_bid_amount=None, 
+                         current_highest_bid_username=None, 
+                         current_highest_bid_timestamp=None, 
+                         current_bidder_location=None, 
+                         current_bidder_time_joined=None):
         connection = self.get_db_connection()
         if not connection:
             raise Exception("Failed to get database connection")
         
         cursor = connection.cursor()
         try:
-            current_date = date.today()
-            time_obj = datetime.strptime(current_highest_bid_timestamp, '%I:%M:%S %p')
-            full_timestamp = datetime.combine(current_date, time_obj.time())
 
-            unique_identifier = f"{self.auction_web_identifier}_{current_date}"
-            current_highest_bid_amount = float(current_highest_bid_amount.replace('$', ''))
-            current_bidder_time_joined = datetime.strptime(current_bidder_time_joined.strip(), '%m/%d/%Y').date()
+            if current_highest_bid_amount and current_highest_bid_username and current_highest_bid_timestamp:
+                current_date = date.today()
+                time_obj = datetime.strptime(current_highest_bid_timestamp, '%I:%M:%S %p')
+                full_timestamp = datetime.combine(current_date, time_obj.time())
 
-            cursor.execute("INSERT INTO bids (unique_identifier, highest_bid, bidder_name, bid_time) VALUES (%s, %s, %s, %s)", 
+                unique_identifier = f"{self.auction_web_identifier}_{current_date}"
+                current_highest_bid_amount = float(current_highest_bid_amount.replace('$', ''))
+
+                cursor.execute("INSERT INTO bids (unique_identifier, highest_bid, bidder_name, bid_time) VALUES (%s, %s, %s, %s)", 
                    (unique_identifier, current_highest_bid_amount, current_highest_bid_username, full_timestamp))
-        
-            cursor.execute("""
-                INSERT IGNORE INTO bidders (bidder_name, bidder_location, join_date) 
-                VALUES (%s, %s, %s)
-            """, (current_highest_bid_username, current_bidder_location, current_bidder_time_joined))
+           
+            if current_highest_bid_username and current_bidder_location and current_bidder_time_joined:
+                current_bidder_time_joined = datetime.strptime(current_bidder_time_joined.strip(), '%m/%d/%Y').date()
+                cursor.execute("""
+                    INSERT IGNORE INTO bidders (bidder_name, bidder_location, join_date) 
+                        VALUES (%s, %s, %s)
+                """, (current_highest_bid_username, current_bidder_location, current_bidder_time_joined))
 
             connection.commit()
             cursor.close()
@@ -198,7 +241,8 @@ class AuctionInfo:
         is_runner_up_discount = self.is_runner_up_discount()
         is_no_reentry = self.is_no_reentry()
         is_tripple_booked = self.is_tripple_booked()
-        self.save_to_database(is_runner_up_discount, is_no_reentry, is_tripple_booked, is_sold=False) 
+        is_overload = self.is_overload()
+        self.save_to_database(is_runner_up_discount, is_no_reentry, is_tripple_booked, is_overload, is_sold=False) 
       
     def get_buy_it_now_info(self):
         price_div = self.driver.find_element(By.CSS_SELECTOR, 'div.css-146c3p1.r-cqee49.r-gfo7p.r-ubezar')
@@ -233,15 +277,15 @@ class AuctionInfo:
             return item_name
         return None
 
-    def save_to_database(self, is_runner_up_discount, is_no_reentry, is_tripple_booked, is_sold):
+    def save_to_database(self, is_runner_up_discount, is_no_reentry, is_tripple_booked, is_overload, is_sold):
         connection = self.get_db_connection()
         if not connection:
             raise Exception("Failed to get database connection")
         cursor = connection.cursor()
         current_date = date.today()
         unique_identifier = f"{self.auction_web_identifier}_{current_date}"
-        cursor.execute("INSERT INTO auctions (unique_identifier, item_name, buy_it_now_price, no_jumper_limit, is_runner_up_discount, is_no_reentry, is_tripple_booked, is_sold) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)", 
-               (unique_identifier, self.item_name, self.buy_it_now_price, self.no_jumper_limit, is_runner_up_discount, is_no_reentry, is_tripple_booked, is_sold))
+        cursor.execute("INSERT INTO auctions (unique_identifier, item_name, buy_it_now_price, no_jumper_limit, is_runner_up_discount, is_no_reentry, is_tripple_booked, is_overload, is_sold) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)", 
+               (unique_identifier, self.item_name, self.buy_it_now_price, self.no_jumper_limit, is_runner_up_discount, is_no_reentry, is_tripple_booked, is_overload, is_sold))
         connection.commit()
         cursor.close()
         print("Auction info saved to database")
@@ -305,6 +349,17 @@ class AuctionInfo:
         except:
             return False
 
+    def is_overload(self):
+        try:
+            element = WebDriverWait(self.driver, 3).until(
+                EC.presence_of_element_located((By.XPATH, 
+                "//div[contains(@class, 'css-146c3p1') and contains(text(), 'Overload Auction')]"
+                ))
+            )
+            return True
+        except TimeoutException:
+            return False
+
 def setup_driver():
     chrome_options = Options()
     chrome_options.add_argument("--headless")  # Ensure GUI is off
@@ -333,11 +388,14 @@ def get_auction_info(url, driver, db_config):
 
 def run_monitor(url, driver, db_config):
     driver.get(url)
+    current_date = date.today()
+    auction_web_identifier = url.split("/")[-1]
+    unique_identifier = f"{auction_web_identifier}_{current_date}"
     monitor = AuctionMonitor(url, driver, db_config)
     print('\rMonitoring initialized successfully!')
     print('\rStarting monitoring...')
     print('----------------------------------------')
-    monitor.start_monitoring()
+    monitor.start_monitorinig_auction()
 
 def monitor_auction_thread(url, db_config):
     driver = setup_driver()

@@ -10,8 +10,8 @@ def create_database_and_tables(db_config):
             cursor = connection.cursor()
             
             # Create database
-            cursor.execute("CREATE DATABASE IF NOT EXISTS NAME OF DATABASE")
-            cursor.execute("USE NAME OF DATABASE")
+            cursor.execute("CREATE DATABASE IF NOT EXISTS dealdash_schema")
+            cursor.execute("USE dealdash_schema")
             
             # Create auctions table
             cursor.execute("""
@@ -23,6 +23,7 @@ def create_database_and_tables(db_config):
                 is_runner_up_discount BOOLEAN DEFAULT False,
                 is_no_reentry BOOLEAN DEFAULT False,
                 is_tripple_booked BOOLEAN DEFAULT False,
+                is_overload BOOLEAN DEFAULT False,
                 is_sold BOOLEAN DEFAULT False
             )
             """)
@@ -56,7 +57,7 @@ def create_database_and_tables(db_config):
 db_config = {
     "host": "localhost",
     "user": "root",
-    "password": "********"
+    "password": "Abis225588"
 }
 
 create_database_and_tables(db_config)
