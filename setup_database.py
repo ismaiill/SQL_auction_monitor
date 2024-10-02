@@ -10,8 +10,8 @@ def create_database_and_tables(db_config):
             cursor = connection.cursor()
             
             # Create database
-            cursor.execute("CREATE DATABASE IF NOT EXISTS dealdash_schema")
-            cursor.execute("USE dealdash_schema")
+            cursor.execute("CREATE DATABASE IF NOT EXISTS auctions_schema")
+            cursor.execute("USE auctions_schema")
             
             # Create auctions table
             cursor.execute("""
