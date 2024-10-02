@@ -10,7 +10,6 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, StaleElementReferenceException, NoSuchElementException
 import time
 import threading
-from bs4 import BeautifulSoup
 import time
 import re
 import mysql.connector
@@ -70,10 +69,10 @@ class AuctionMonitor:
                         current_bidders_time_joined = current_bidders_info[0]
                         current_bidders_location = current_bidders_info[1]
                         self.save_to_database(current_highest_bid_username=current_bidders_username, current_bidder_location=current_bidders_location, current_bidder_time_joined=current_bidders_time_joined)
-                        print( "current_bidders_username: ", current_bidders_username)
-                        print( "current_bidders_location: ", current_bidders_location)
-                        print( "current_bidders_time_joined: ", current_bidders_time_joined)
-                        # print( "----------------------------------------")
+                        #print( "current_bidders_username: ", current_bidders_username)
+                        #print( "current_bidders_location: ", current_bidders_location)
+                        #print( "current_bidders_time_joined: ", current_bidders_time_joined)
+                        #print( "----------------------------------------")
                 status = self.is_item_sold(self.driver)
                 if status == True:
                     #self.update_database()
@@ -425,12 +424,11 @@ def run_scheduler():
 
 def main():
     db_config = {
-        "host": "***",
-        "user": "***",
-        "password": "***",
-        "database": "***"
+        "host": "localhost",
+        "user": "ismail",
+        "password": "584691RISEsmailo@", 
+        "database": "auction_schema"
     }
-
     threads = []    
     scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
     scheduler_thread.start()

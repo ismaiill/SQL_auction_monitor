@@ -10,8 +10,8 @@ def create_database_and_tables(db_config):
             cursor = connection.cursor()
             
             # Create database
-            cursor.execute("CREATE DATABASE IF NOT EXISTS NAME OF DATABASE")
-            cursor.execute("USE NAME OF DATABASE")
+            cursor.execute("CREATE DATABASE IF NOT EXISTS dealdash_schema")
+            cursor.execute("USE dealdash_schema")
             
             # Create auctions table
             cursor.execute("""
@@ -55,9 +55,9 @@ def create_database_and_tables(db_config):
         return None
 
 db_config = {
-    "host": "***",
-    "user": "***",
-    "password": "***"
+    "host": "localhost",
+    "user": "ismail",
+    "password": "584691RISEsmailo@"
 }
 
 create_database_and_tables(db_config)
