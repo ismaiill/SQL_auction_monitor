@@ -23,6 +23,8 @@ class AuctionMonitor:
         self.auction_web_identifier = url.split("/")[-1]
         self.driver = driver
         self.db_config = db_config
+        current_date = date.today()
+        self.unique_identifier = f"{self.auction_web_identifier}_{current_date}"
    
     def start_monitoring_bids(self):
         self.driver = setup_driver()
@@ -147,10 +149,7 @@ class AuctionMonitor:
             raise Exception("Failed to get database connection")
         cursor = connection.cursor()
         
-        current_date = date.today()
-        unique_identifier = f"{self.auction_web_identifier}_{current_date}"
-
-        cursor.execute("UPDATE auctions SET is_sold = 1 WHERE unique_identifier = %s", (unique_identifier,))
+        cursor.execute("UPDATE auctions SET is_sold = 1 WHERE unique_identifier = %s", (self.unique_identifier,))
         connection.commit()
         cursor.close()
         #print("Auction status updated in database")
@@ -173,12 +172,11 @@ class AuctionMonitor:
                         time_obj = datetime.strptime(bid[2], '%I:%M:%S %p')
                         full_timestamp = datetime.combine(current_date, time_obj.time())
 
-                        unique_identifier = f"{self.auction_web_identifier}_{current_date}"
                         current_highest_bid_amount = float(bid[0].replace('$', ''))
                         current_highest_bid_username = bid[1]
 
                         cursor.execute("INSERT IGNORE INTO bids (unique_identifier, highest_bid, bidder_name, bid_time) VALUES (%s, %s, %s, %s)", 
-                            (unique_identifier, current_highest_bid_amount, current_highest_bid_username, full_timestamp))
+                            (self.unique_identifier, current_highest_bid_amount, current_highest_bid_username, full_timestamp))
            
             if current_highest_bid_username and current_bidder_location and current_bidder_time_joined:
                 current_bidder_time_joined = datetime.strptime(current_bidder_time_joined.strip(), '%m/%d/%Y').date()
@@ -218,6 +216,8 @@ class AuctionInfo:
         self.buy_it_now_price = None
         self.no_jumper_limit = None
         self.auction_web_identifier = self.url.split("/")[-1]
+        current_date = date.today()
+        self.unique_identifier = f"{self.auction_web_identifier}_{current_date}"
 
     def get_auction_info(self):
         WebDriverWait(self.driver, 10).until(
@@ -270,10 +270,8 @@ class AuctionInfo:
         if not connection:
             raise Exception("Failed to get database connection")
         cursor = connection.cursor()
-        current_date = date.today()
-        unique_identifier = f"{self.auction_web_identifier}_{current_date}"
         cursor.execute("INSERT INTO auctions (unique_identifier, item_name, buy_it_now_price, no_jumper_limit, is_runner_up_discount, is_no_reentry, is_tripple_booked, is_overload, is_sold) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)", 
-               (unique_identifier, self.item_name, self.buy_it_now_price, self.no_jumper_limit, is_runner_up_discount, is_no_reentry, is_tripple_booked, is_overload, is_sold))
+               (self.unique_identifier, self.item_name, self.buy_it_now_price, self.no_jumper_limit, is_runner_up_discount, is_no_reentry, is_tripple_booked, is_overload, is_sold))
         connection.commit()
         cursor.close()
         print("Auction info saved to database")
@@ -378,7 +376,6 @@ def run_monitor(url, driver, db_config):
     driver.get(url)
     current_date = date.today()
     auction_web_identifier = url.split("/")[-1]
-    unique_identifier = f"{auction_web_identifier}_{current_date}"
     monitor = AuctionMonitor(url, driver, db_config)
     print('\rMonitoring initialized successfully!')
     print('\rStarting monitoring...')
