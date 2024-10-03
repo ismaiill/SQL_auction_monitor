@@ -34,7 +34,8 @@ def create_database_and_tables(db_config):
                 unique_identifier VARCHAR(255),
                 highest_bid DECIMAL(10, 2),
                 bidder_name VARCHAR(255),
-                bid_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                bid_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT unique_bid UNIQUE (unique_identifier, highest_bid, bidder_name, bid_time)
             )
             """)
             
@@ -56,8 +57,8 @@ def create_database_and_tables(db_config):
 
 db_config = {
     "host": "localhost",
-    "user": "ismail",
-    "password": "584691RISEsmailo@"
+    "user": "root",
+    "password": "Abis225588"
 }
 
 create_database_and_tables(db_config)

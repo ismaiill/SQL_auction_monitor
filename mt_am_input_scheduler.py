@@ -31,28 +31,15 @@ class AuctionMonitor:
         previous_data = None
         try:
             while True:
-                current_highest_bid = self.get_current_highest_bid_info(self.driver)
+                current_log = self.get_current_log(self.driver)
                 self.keep_alive(self.driver)
-                if current_highest_bid != previous_data:
-                    previous_data = current_highest_bid
-                    if current_highest_bid != ['']:
-                        current_highest_bid_amount = current_highest_bid[0]
-                        current_highest_bid_username = current_highest_bid[1]
-                        current_highest_bid_timestamp = current_highest_bid[2]
-                        self.save_to_database(current_highest_bid_amount, current_highest_bid_username, current_highest_bid_timestamp)
-                        # print( "current_highest_bid_amount: ", current_highest_bid_amount)
-                        # print( "current_highest_bid_username: ", current_highest_bid_username)
-                        # print( "current_highest_bid_timestamp: ", current_highest_bid_timestamp)
-                        # print( "----------------------------------------")
+                self.save_to_database(current_log)
                 status = self.is_item_sold(self.driver)
                 if status == True:
-                    #self.update_database()
                     print("Item is sold!, stopped monitoring bids.")
                     break
         except KeyboardInterrupt:
             print("Monitoring stopped by user.")
-        # finally:
-        #     self.driver.quit()
 
     def start_monitoring_bidders_info(self):
         self.driver = setup_driver()
@@ -108,16 +95,17 @@ class AuctionMonitor:
         except Exception as e:
             print(f"Error refreshing driver: {e}")
 
-    def get_current_highest_bid_info(self, driver):
+    def get_current_log(self, driver):
         try:
             # Wait for the parent div with role="log"
             log_element = WebDriverWait(driver, 3).until(
                 EC.presence_of_element_located((By.XPATH, "//div[@role='log']"))
             )
-            # Get the first child of the parent div
-            highest_bid_info = log_element.find_element(By.XPATH, "./*[2]")
-            highest_bid_info = highest_bid_info.text.split("\n")
-            return highest_bid_info
+            log_entries = log_element.find_elements(By.XPATH, "./div")
+            bids = []
+            for index in range(1, len(log_entries)):
+                bids.append(log_entries[index].text.split("\n"))
+            return bids
         except Exception as e:
             print(f"Error getting auction data: {e}")
             return None
@@ -168,9 +156,8 @@ class AuctionMonitor:
         #print("Auction status updated in database")
         connection.close()
 
-    def save_to_database(self, current_highest_bid_amount=None, 
+    def save_to_database(self, current_log=None, 
                          current_highest_bid_username=None, 
-                         current_highest_bid_timestamp=None, 
                          current_bidder_location=None, 
                          current_bidder_time_joined=None):
         connection = self.get_db_connection()
@@ -179,17 +166,19 @@ class AuctionMonitor:
         
         cursor = connection.cursor()
         try:
+            if current_log is not None:
+                for bid in current_log:
+                    if len(bid) > 2:
+                        current_date = date.today()
+                        time_obj = datetime.strptime(bid[2], '%I:%M:%S %p')
+                        full_timestamp = datetime.combine(current_date, time_obj.time())
 
-            if current_highest_bid_amount and current_highest_bid_username and current_highest_bid_timestamp:
-                current_date = date.today()
-                time_obj = datetime.strptime(current_highest_bid_timestamp, '%I:%M:%S %p')
-                full_timestamp = datetime.combine(current_date, time_obj.time())
+                        unique_identifier = f"{self.auction_web_identifier}_{current_date}"
+                        current_highest_bid_amount = float(bid[0].replace('$', ''))
+                        current_highest_bid_username = bid[1]
 
-                unique_identifier = f"{self.auction_web_identifier}_{current_date}"
-                current_highest_bid_amount = float(current_highest_bid_amount.replace('$', ''))
-
-                cursor.execute("INSERT INTO bids (unique_identifier, highest_bid, bidder_name, bid_time) VALUES (%s, %s, %s, %s)", 
-                   (unique_identifier, current_highest_bid_amount, current_highest_bid_username, full_timestamp))
+                        cursor.execute("INSERT IGNORE INTO bids (unique_identifier, highest_bid, bidder_name, bid_time) VALUES (%s, %s, %s, %s)", 
+                            (unique_identifier, current_highest_bid_amount, current_highest_bid_username, full_timestamp))
            
             if current_highest_bid_username and current_bidder_location and current_bidder_time_joined:
                 current_bidder_time_joined = datetime.strptime(current_bidder_time_joined.strip(), '%m/%d/%Y').date()
@@ -379,7 +368,7 @@ def get_auction_info(url, driver, db_config):
     driver.get(url)
     auction_info = AuctionInfo(url, driver, db_config)
     auction_info.get_auction_info()
-    duration = 5
+    duration = 1
     for _ in range(duration + 1):
             print(f"\rMonitoring starts in {duration - _} seconds", end='', flush=False)
             time.sleep(1)
@@ -425,9 +414,9 @@ def run_scheduler():
 def main():
     db_config = {
         "host": "localhost",
-        "user": "ismail",
-        "password": "584691RISEsmailo@", 
-        "database": "auction_schema"
+        "user": "root",
+        "password": "Abis225588", 
+        "database": "auctions_schema"
     }
     threads = []    
     scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
