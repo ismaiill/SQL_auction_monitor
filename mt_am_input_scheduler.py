@@ -109,7 +109,7 @@ class AuctionMonitor:
                 bids.append(log_entries[index].text.split("\n"))
             return bids
         except Exception as e:
-            print(f"Error getting auction data: {e}")
+            #print(f"Error getting auction data: {e}")
             return None
 
     def get_current_bider_info(self, driver):  
@@ -129,7 +129,7 @@ class AuctionMonitor:
                     if len(bidder_info) > 1:
                         return bidder_username, bidder_info
             except (TimeoutException, StaleElementReferenceException):
-                print("Element not found, retrying...")
+                #print("Element not found, retrying...")
             except Exception as e:
                 print(f"An unexpected error occurred: {e}")
                 return [None, None]
@@ -411,8 +411,8 @@ def run_scheduler():
 def main():
     db_config = {
         "host": "localhost",
-        "user": "root",
-        "password": "Abis225588", 
+        "user": "ismail",
+        "password": "584691RISEsmailo@", 
         "database": "auctions_schema"
     }
     threads = []    
