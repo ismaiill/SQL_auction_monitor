@@ -16,6 +16,7 @@ import mysql.connector
 from mysql.connector import Error
 from datetime import datetime, date
 import schedule
+import pdb
 
 class AuctionMonitor:   
     def __init__(self, url, driver, db_config):
@@ -130,16 +131,18 @@ class AuctionMonitor:
                         return bidder_username, bidder_info
             except (TimeoutException, StaleElementReferenceException):
                 #print("Element not found, retrying...")
+                pass
             except Exception as e:
-                print(f"An unexpected error occurred: {e}")
+                #print(f"An unexpected error occurred: {e}")
                 return [None, None]
 
     def is_item_sold(self, driver, timeout=10):
         try:
-            sold_element = WebDriverWait(driver, 1).until(
+            sold_element = WebDriverWait(driver, timeout).until(
                 EC.presence_of_element_located((By.XPATH, "//div[contains(@class, 'css-146c3p1') and contains(text(), 'SOLD')]"))
             )
             return True
+            
         except:
             return False
 
