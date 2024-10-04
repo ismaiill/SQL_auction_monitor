@@ -57,8 +57,8 @@ def create_database_and_tables(db_config):
 
 db_config = {
     "host": "localhost",
-    "user": "ismail",
-    "password": "584691RISEsmailo@"
+    "user": "root",
+    "password": "Abis225588"
 }
 
 create_database_and_tables(db_config)

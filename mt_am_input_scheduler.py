@@ -139,13 +139,12 @@ class AuctionMonitor:
     def is_item_sold(self, driver, timeout=10):
         try:
             sold_element = WebDriverWait(driver, timeout).until(
-                EC.presence_of_element_located((By.XPATH, "//div[contains(@class, 'css-146c3p1') and contains(text(), 'SOLD')]"))
+                EC.presence_of_element_located((By.XPATH, "//div[@class='css-146c3p1 r-gfo7p r-jwli3a r-q4m81j' and text()='SOLD!']"))
             )
             return True
-            
-        except:
+        except TimeoutException:
             return False
-
+    
     def update_database(self):
         connection = self.get_db_connection()
         if not connection:
@@ -242,7 +241,7 @@ class AuctionInfo:
             price_match = re.search(r'\$([0-9,]+)', price_text)
             if price_match:
                 price = price_match.group(1).replace(',', '')
-                print('Buy it now price: ', '$'+price)
+                # print('Buy it now price: ', '$'+price)
                 return price
         return None
 
@@ -254,7 +253,7 @@ class AuctionInfo:
                 limit_match = re.search(r'\$(\d+(?:\.\d{2})?)', limit_text)
                 if limit_match:
                     limit = float(limit_match.group(1))
-                    print('No Jumper Limit: ', limit)
+                    # print('No Jumper Limit: ', limit)
                     return limit
         except:
             pass
@@ -264,7 +263,7 @@ class AuctionInfo:
         item_name_h1 = self.driver.find_element(By.CSS_SELECTOR, 'h1.css-146c3p1.r-gfo7p.r-xdvzot.r-1x35g6.r-vw2c0b')
         if item_name_h1:
             item_name = item_name_h1.text.strip()
-            print('Item name: ', item_name)
+            # print('Item name: ', item_name)
             return item_name
         return None
 
@@ -373,16 +372,16 @@ def get_auction_info(url, driver, db_config):
     for _ in range(duration + 1):
             print(f"\rMonitoring starts in {duration - _} seconds", end='', flush=False)
             time.sleep(1)
-    print("\rInitializing auction monitor...")
+    # print("\rInitializing auction monitor...")
 
 def run_monitor(url, driver, db_config):
     driver.get(url)
     current_date = date.today()
     auction_web_identifier = url.split("/")[-1]
     monitor = AuctionMonitor(url, driver, db_config)
-    print('\rMonitoring initialized successfully!')
-    print('\rStarting monitoring...')
-    print('----------------------------------------')
+    # print('\rMonitoring initialized successfully!')
+    # print('\rStarting monitoring...')
+    # print('----------------------------------------')
     monitor.start_monitorinig_auction()
 
 def monitor_auction_thread(url, db_config):
@@ -414,8 +413,8 @@ def run_scheduler():
 def main():
     db_config = {
         "host": "localhost",
-        "user": "ismail",
-        "password": "584691RISEsmailo@", 
+        "user": "root",
+        "password": "Abis225588", 
         "database": "auctions_schema"
     }
     threads = []    
