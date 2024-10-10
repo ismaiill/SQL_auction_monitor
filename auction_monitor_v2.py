@@ -19,9 +19,19 @@ import schedule
 import pdb
 import queue
 from aggregator import setup_aggregator_driver, Aggregator, get_auctions
+import logging 
 
 bids_queue = queue.Queue()
 bidders_queue = queue.Queue()
+
+logging.basicConfig(
+    filename='thread_monitor.log',  # Specify the log file name
+    filemode='a',                   # Append mode; use 'w' to overwrite
+    level=logging.INFO,             # Set the logging level
+    format='%(asctime)s - %(levelname)s - %(message)s'  # Log message format
+)
+
+
 num_threads = 0
 max_num_threads = 6
 
@@ -75,6 +85,8 @@ class AuctionMonitor:
             print("Monitoring stopped by user.")
    
     def start_monitorinig_auction(self):
+        global num_threads
+        
         bid_thread = threading.Thread(target=self.start_monitoring_bids)
         bidder_thread = threading.Thread(target=self.start_monitoring_bidders_info)
         bid_thread.start()
@@ -89,6 +101,8 @@ class AuctionMonitor:
         finally:
             print(f"Monitoring of auction {self.auction_web_identifier} complete.")
             num_threads -= 1
+            logging.info(f"Stopped a thread. Current number of threads: {num_threads}")
+            self.update_database()
             print("Auction status updated in database")
             self.driver.quit()
 
@@ -143,6 +157,19 @@ class AuctionMonitor:
             return True
         except TimeoutException:
             return False
+
+    def update_database(self):
+        connection = self.get_db_connection()
+        if not connection:
+            raise Exception("Failed to get database connection")
+        cursor = connection.cursor()
+        
+        cursor.execute("UPDATE auctions SET is_sold = 1 WHERE unique_identifier = %s", (self.unique_identifier,))
+        connection.commit()
+        cursor.close()
+        connection.close()
+
+
 
 class DatabaseSaver:
     def __init__(self, db_config):
@@ -210,7 +237,7 @@ class DatabaseSaver:
             if not hasattr(self, 'db_pool'):
                 self.db_pool = mysql.connector.pooling.MySQLConnectionPool(
                 pool_name="mypool",
-                pool_size=5,
+                pool_size=30,
                 **self.db_config
             )
             return self.db_pool.get_connection()
@@ -428,6 +455,7 @@ def process_aggregated_auctions(db_config):
         if num_threads <= max_num_threads:
             schedule_auction_monitor(url, db_config, auction_date, auction_time)
             num_threads += 1 
+            logging.info(f"Started a thread. Current number of threads: {num_threads}")
 
 def run_aggregator_and_processor(db_config):
     process_aggregated_auctions(db_config)

@@ -108,5 +108,3 @@ def setup_aggregator_driver():
     return webdriver.Chrome(options=chrome_options)
 
 
-
-get_auctions()
