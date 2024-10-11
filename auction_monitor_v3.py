@@ -36,26 +36,26 @@ num_threads = 0
 max_num_threads = 6
 
 class AuctionMonitor:   
-    def __init__(self, url, driver, db_config):
+    def __init__(self, url, bids_driver, bidders_driver, db_config):
         self.url = url
         self.auction_web_identifier = url.split("/")[-1]
-        self.driver = driver
+        self.bids_driver = bids_driver
+        self.bidders_driver = bidders_driver
         self.db_config = db_config
         current_date = date.today()
         self.unique_identifier = f"{self.auction_web_identifier}_{current_date}"
    
     def start_monitoring_bids(self):
-        self.driver = setup_driver()
-        self.driver.get(self.url)
+        self.bids_driver.get(self.url)
         
         previous_data = None
         try:
             while True:
-                current_log = self.get_current_log(self.driver)
+                current_log = self.get_current_log(self.bids_driver)
                 if current_log:
-                    self.keep_alive(self.driver)
+                    self.keep_alive(self.bids_driver)
                     bids_queue.put([self.unique_identifier] + current_log)
-                status = self.is_item_sold(self.driver)
+                status = self.is_item_sold(self.bids_driver)
                 if status == True:
                     print("Item is sold!, stopped monitoring bids.")
                     break
@@ -63,21 +63,20 @@ class AuctionMonitor:
             print("Monitoring stopped by user.")
 
     def start_monitoring_bidders_info(self):
-        self.driver = setup_driver()
-        self.driver.get(self.url)
+        self.bidders_driver.get(self.url)
         
         previous_data = None
         try:
             while True:
-                current_bidders_username, current_bidders_info = self.get_current_bider_info(self.driver)
-                self.keep_alive(self.driver)
+                current_bidders_username, current_bidders_info = self.get_current_bider_info(self.bidders_driver)
+                self.keep_alive(self.bidders_driver)
                 if current_bidders_info != previous_data:
                     previous_data = current_bidders_info
                     if current_bidders_info and current_bidders_info != [None, None]:
                         current_bidders_time_joined = current_bidders_info[0]
                         current_bidders_location = current_bidders_info[1]
                         bidders_queue.put([current_bidders_username, current_bidders_location, current_bidders_time_joined])
-                status = self.is_item_sold(self.driver)
+                status = self.is_item_sold(self.bidders_driver)
                 if status == True:
                     print("Item is sold!, stopped monitoring bidders info.")
                     break
@@ -86,7 +85,6 @@ class AuctionMonitor:
    
     def start_monitorinig_auction(self):
         global num_threads
-        
         bid_thread = threading.Thread(target=self.start_monitoring_bids)
         bidder_thread = threading.Thread(target=self.start_monitoring_bidders_info)
         bid_thread.start()
@@ -168,8 +166,15 @@ class AuctionMonitor:
         connection.commit()
         cursor.close()
         connection.close()
-
-
+    
+    def get_db_connection(self):
+        try:
+            # Create a new connection each time without using a pool
+            connection = mysql.connector.connect(**self.db_config)
+            return connection
+        except mysql.connector.Error as err:
+            print(f"Error connecting to MySQL: {err}")
+            return None
 
 class DatabaseSaver:
     def __init__(self, db_config):
@@ -190,10 +195,10 @@ class DatabaseSaver:
             if bidders_queue:
                 bidder_info = bidders_queue.get()
                 current_bidders_username, current_bidders_location, current_bidders_time_joined = bidder_info
-                self.save_to_database(current_highest_bid_username=current_bidders_username, current_bidder_location=current_bidders_location, current_bidder_time_joined=current_bidders_time_joined)
+                # self.save_to_database(current_highest_bid_username=current_bidders_username, current_bidder_location=current_bidders_location, current_bidder_time_joined=current_bidders_time_joined)
                 time.sleep(1)
                 print(bidder_info)
-
+                
     def save_to_database(self, unique_identifier=None, log=None, 
                          current_highest_bid_username=None, 
                          current_bidder_location=None, 
@@ -237,15 +242,15 @@ class DatabaseSaver:
         try:
             if not hasattr(self, 'db_pool'):
                 self.db_pool = mysql.connector.pooling.MySQLConnectionPool(
-                pool_name="mypool",
-                pool_size=30,
-                **self.db_config
-            )
+                    pool_name="mypool",
+                    pool_size=16,
+                    **self.db_config
+                )
             return self.db_pool.get_connection()
         except mysql.connector.Error as err:
             print(f"Error connecting to MySQL: {err}")
             return None
-
+    
 class AuctionInfo:
     def __init__(self, url, driver, db_config):
         self.url = url
@@ -313,18 +318,13 @@ class AuctionInfo:
                (self.unique_identifier, self.item_name, self.buy_it_now_price, self.no_jumper_limit, is_runner_up_discount, is_no_reentry, is_tripple_booked, is_overload, is_sold))
         connection.commit()
         cursor.close()
-        # print("Auction info saved to database")
         connection.close()
 
     def get_db_connection(self):
         try:
-            if not hasattr(self, 'db_pool'):
-                self.db_pool = mysql.connector.pooling.MySQLConnectionPool(
-                    pool_name="mypool",
-                    pool_size=5,
-                    **self.db_config
-                )
-            return self.db_pool.get_connection()
+            # Create a new connection each time without using a pool
+            connection = mysql.connector.connect(**self.db_config)
+            return connection
         except mysql.connector.Error as err:
             print(f"Error connecting to MySQL: {err}")
             return None
@@ -392,42 +392,33 @@ def setup_driver():
     chrome_options.add_argument("--disable-dev-shm-usage")
     return webdriver.Chrome(options=chrome_options)
 
-def connect_to_database(db_config):
-    connection = mysql.connector.connect(**db_config)
-    if connection:
-        cursor = connection.cursor()
-        print("Database connection successful")
-    else:
-        raise Exception("Failed to setup database connection")
-    return connection
-
 def get_auction_info(url, driver, db_config):
     driver.get(url)
     auction_info = AuctionInfo(url, driver, db_config)
     auction_info.get_auction_info()
     duration = 1
     for _ in range(duration + 1):
-            print(f"\rMonitoring for auction {url.split('/')[-1]} starts in {duration - _} seconds", end='', flush=False)
+            # print(f"\rMonitoring for auction {url.split('/')[-1]} starts in {duration - _} seconds", end='', flush=False)
             time.sleep(1)
-    # print("\rInitializing auction monitor...")
+    print(f"\r Started monitoring auction {url.split('/')[-1]}")
 
-def run_monitor(url, driver, db_config):
-    driver.get(url)
-    current_date = date.today()
-    auction_web_identifier = url.split("/")[-1]
-    monitor = AuctionMonitor(url, driver, db_config)
-    # print('\rMonitoring initialized successfully!')
-    # print('\rStarting monitoring...')
-    # print('----------------------------------------')
+def run_monitor(url, bids_driver,bidders_driver, db_config):
+    # bids_driver.get(url)
+    # bidders_driver.get(url)
+    monitor = AuctionMonitor(url, bids_driver,bidders_driver, db_config)
     monitor.start_monitorinig_auction()
 
 def monitor_auction_thread(url, db_config):
-    driver = setup_driver()
+    bids_driver = setup_driver()
+    bidders_driver = setup_driver()
+    info_driver = setup_driver()
     try:
-        get_auction_info(url, driver, db_config)
-        run_monitor(url, driver, db_config)
+        get_auction_info(url, info_driver, db_config)
+        run_monitor(url, bids_driver,bidders_driver, db_config)
+        pass
     finally:
-        driver.quit()
+        bids_driver.quit()
+        bidders_driver.quit()
 
 def process_new_url(url, db_config):
     thread = threading.Thread(target=monitor_auction_thread, args=(url, db_config))
@@ -484,7 +475,7 @@ def main():
     scheduler_thread.start()
 
     ### BEGIN TESTING AREA 
-    # url = 'https://www.dealdash.com/auction/14043114'
+    # url = 'https://www.dealdash.com/auction/14051869'
     # thread = threading.Thread(target=monitor_auction_thread, args=(url, db_config))
     # thread.start()
 
