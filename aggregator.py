@@ -25,7 +25,7 @@ class Aggregator:
 
     def aggregate_auctions(self):
         last_index  = 13
-        for index in range(3, 6):
+        for index in range(3, last_index):
             self.get_auctions_from_current_page()
             self.go_to_next_page(index)
             time.sleep(2)

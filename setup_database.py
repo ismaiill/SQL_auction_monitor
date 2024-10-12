@@ -24,7 +24,8 @@ def create_database_and_tables(db_config):
                 is_no_reentry BOOLEAN DEFAULT False,
                 is_tripple_booked BOOLEAN DEFAULT False,
                 is_overload BOOLEAN DEFAULT False,
-                is_sold BOOLEAN DEFAULT False
+                is_sold BOOLEAN DEFAULT False,
+                sold_price FLOAT
             )
             """)
             

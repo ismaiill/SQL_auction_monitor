@@ -20,9 +20,14 @@ import pdb
 import queue
 from aggregator import setup_aggregator_driver, Aggregator, get_auctions
 import logging 
+from collections import deque
 
-bids_queue = queue.Queue()
-bidders_queue = queue.Queue()
+
+bids_queue = deque()
+bidders_queue = deque()
+
+cleaned_bidds_queue = deque()
+cleaned_bidders_queue = deque()
 
 logging.basicConfig(
     filename='thread_monitor.log',  # Specify the log file name
@@ -31,9 +36,9 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'  # Log message format
 )
 
-auction_threads = []
+threads = []
 num_threads = 0
-max_num_threads = float('inf')
+max_num_threads = 6
 
 class AuctionMonitor:   
     def __init__(self, url, bids_driver, bidders_driver, db_config):
@@ -55,7 +60,7 @@ class AuctionMonitor:
                 self.keep_alive(self.bids_driver)
                 if current_log != previous_log:
                     previous_log = current_log
-                    bids_queue.put([self.unique_identifier] + current_log)
+                    bids_queue.append([self.unique_identifier] + current_log)
                 status = self.is_item_sold(self.bids_driver)
                 if status == True:
                     print("Item is sold!, stopped monitoring bids.")
@@ -76,7 +81,7 @@ class AuctionMonitor:
                     if current_bidders_info and current_bidders_info != [None, None]:
                         current_bidders_time_joined = current_bidders_info[0]
                         current_bidders_location = current_bidders_info[1]
-                        bidders_queue.put([current_bidders_username, current_bidders_location, current_bidders_time_joined])
+                        bidders_queue.append([current_bidders_username, current_bidders_location, current_bidders_time_joined])
                 status = self.is_item_sold(self.bidders_driver)
                 if status == True:
                     print("Item is sold!, stopped monitoring bidders info.")
@@ -100,10 +105,8 @@ class AuctionMonitor:
         finally:
             print(f"Monitoring of auction {self.auction_web_identifier} complete.")
             num_threads -= 1
-            auction_threads.remove(self.url.split('/')[-1])
             logging.info(f"Stopped a thread. Current number of threads: {num_threads}")
-            sold_price  = self.get_final_price(self.bids_driver)
-            self.update_database(sold_price)
+            self.update_database()
             print("Auction status updated in database")
             self.bids_driver.quit()
             self.bidders_driver.quit()
@@ -159,20 +162,14 @@ class AuctionMonitor:
             return True
         except TimeoutException:
             return False
-    
-    def get_final_price(self, driver, timeout=1):
-        sold_price_element = WebDriverWait(driver, timeout).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, ".css-146c3p1.r-gfo7p.r-jwli3a.r-1ra0lkn.r-vw2c0b"))
-        )
-        return sold_price_element.text
-    
-    def update_database(self, sold_price=None):
+
+    def update_database(self):
         connection = self.get_db_connection()
-        sold_price = float(sold_price.replace('$', ''))
         if not connection:
             raise Exception("Failed to get database connection")
         cursor = connection.cursor()
-        cursor.execute("UPDATE auctions SET is_sold = 1, sold_price = %s WHERE unique_identifier = %s", (sold_price, self.unique_identifier))
+        
+        cursor.execute("UPDATE auctions SET is_sold = 1 WHERE unique_identifier = %s", (self.unique_identifier,))
         connection.commit()
         cursor.close()
         connection.close()
@@ -193,17 +190,17 @@ class DatabaseSaver:
     def run_bidds_saver(self):
         while True:
             if bids_queue:
-                current_log = bids_queue.get()
+                current_log = cleaned_bidds_queue.popleft() 
                 unique_identifier = current_log[0]
                 log = current_log[1:]
                 self.save_to_database(unique_identifier=unique_identifier, log=log)
+                print(log)
                 time.sleep(1)
-                print(log[0])
     
     def run_bidders_saver(self):
         while True:
             if bidders_queue:
-                bidder_info = bidders_queue.get()
+                bidder_info = bidders_queue.popleft()
                 current_bidders_username, current_bidders_location, current_bidders_time_joined = bidder_info
                 self.save_to_database(current_highest_bid_username=current_bidders_username, current_bidder_location=current_bidders_location, current_bidder_time_joined=current_bidders_time_joined)
                 time.sleep(1)
@@ -220,14 +217,13 @@ class DatabaseSaver:
         cursor = connection.cursor()
         try:
             if log is not None:
-                for bid in log:
-                    if len(bid) > 2:
+                    if len(log) > 2:
                         current_date = date.today()
-                        time_obj = datetime.strptime(bid[2], '%I:%M:%S %p')
+                        time_obj = datetime.strptime(log[2], '%I:%M:%S %p')
                         full_timestamp = datetime.combine(current_date, time_obj.time())
 
-                        current_highest_bid_amount = float(bid[0].replace('$', ''))
-                        current_highest_bid_username = bid[1]
+                        current_highest_bid_amount = float(log[0].replace('$', ''))
+                        current_highest_bid_username = log[1]
 
                         cursor.execute("INSERT IGNORE INTO bids (unique_identifier, highest_bid, bidder_name, bid_time) VALUES (%s, %s, %s, %s)", 
                             (unique_identifier, current_highest_bid_amount, current_highest_bid_username, full_timestamp))
@@ -395,6 +391,19 @@ class AuctionInfo:
         except TimeoutException:
             return False
 
+class QueueCleaner:
+    def __init__(self):
+        pass
+    def run_bids_queue_cleaner():
+        while True:
+            if bids_queue:
+                current_log = bids_queue.popleft() 
+                unique_identifier = current_log[0]
+                log = current_log[1:]
+                for cur_log in log:
+                    if [unique_identifier] + cur_log not in cleaned_bidds_queue:
+                        cleaned_bidds_queue.append([unique_identifier] + cur_log)
+
 def setup_driver():
     chrome_options = Options()
     chrome_options.add_argument("--headless")  # Ensure GUI is off
@@ -452,32 +461,32 @@ def process_aggregated_auctions(db_config):
     global num_threads
     global max_num_threads
     auctions = get_auctions()
-    current_date = datetime.now().date()  # Get the current date
-    tomorrow_date = current_date + timedelta(days=1)  # Calculate tomorrow's date
     time.sleep(2) # wait for aggregator to finish
     for url, auction_date, auction_time in auctions:
-        # if auction_date == current_date or (auction_date == tomorrow_date and auction_time < datetime.strptime('22:00', '%H:%M').time()):
-        if (num_threads <= max_num_threads) and (url.split('/')[-1] not in auction_threads):
+        if num_threads <= max_num_threads:
             schedule_auction_monitor(url, db_config, auction_date, auction_time)
             num_threads += 1 
-            auction_threads.append(url.split('/')[-1])
             logging.info(f"Started a thread. Current number of threads: {num_threads}")
 
 def run_aggregator_and_processor(db_config):
     process_aggregated_auctions(db_config)
-    schedule.every().day.at("12:01").do(process_aggregated_auctions, db_config)
-    schedule.every().day.at("00:01").do(process_aggregated_auctions, db_config)
-
+    schedule.every().day.at("22:00").do(process_aggregated_auctions, db_config)
     while True:
         schedule.run_pending()
         time.sleep(1)
 
 def database_saver(db_config):
+    queue_cleaner = QueueCleaner
+    queue_cleaning_tread = threading.Thread(target= queue_cleaner.run_bids_queue_cleaner)
+    queue_cleaning_tread.start()
+
     databaseSaver = DatabaseSaver(db_config)
     bidds_saver_tread = threading.Thread(target= databaseSaver.run_bidds_saver)
     bidds_saver_tread.start()
     bidders_saver_tread = threading.Thread(target= databaseSaver.run_bidders_saver)
     bidders_saver_tread.start()
+
+
 
 def main():
     db_config = {
@@ -487,20 +496,18 @@ def main():
         "database": "auctions_schema"
     }
         
-    scheduler_thread = threading.Thread(target=run_aggregator_and_processor, args=(db_config,), daemon=True)
-    scheduler_thread.start()
+    # scheduler_thread = threading.Thread(target=run_aggregator_and_processor, args=(db_config,), daemon=True)
+    # scheduler_thread.start()
+
+    ### BEGIN TESTING AREA 
+    url = 'https://www.dealdash.com/auction/14055734'
+    thread = threading.Thread(target=monitor_auction_thread, args=(url, db_config))
+    thread.start()
+
     queue_tread = threading.Thread(target=database_saver, args=(db_config,))
     queue_tread.start()
-
-    ############################################# BEGIN TESTING AREA #############################################
-
-    # url = 'https://www.dealdash.com/auction/14055481'
-    # thread = threading.Thread(target=monitor_auction_thread, args=(url, db_config))
-    # thread.start()
-    # queue_tread = threading.Thread(target=database_saver, args=(db_config,))
-    # queue_tread.start()
-
-    ############################################# END TESTING AREA #############################################
+    
+    ### END OF TESTTING AREA 
 
 
     try:
